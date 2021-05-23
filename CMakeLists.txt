@@ -8,10 +8,10 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
   endif()
 endif()
 
-project(uxnemu)
+project(uxnvita)
 include("${VITASDK}/share/vita.cmake" REQUIRED)
 
-set(VITA_APP_NAME "Uxnemu")
+set(VITA_APP_NAME "Uxn")
 set(VITA_TITLEID  "MERV00001")
 set(VITA_VERSION  "00.01")
 

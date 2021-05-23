@@ -424,7 +424,7 @@ main(int argc, char **argv)
 
 	if(!bootuxn(&u))
 		return error("Boot", "Failed");
-	if(!loaduxn(&u, "ux0:data/uxnemu/boot.rom"))
+	if(!loaduxn(&u, "ux0:data/uxn/boot.rom"))
 		return error("Load", "Failed");
 	if(!init())
 		return error("Init", "Failed");
