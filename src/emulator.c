@@ -1,3 +1,4 @@
+#include <psp2/kernel/processmgr.h>
 #include <SDL2/SDL.h>
 #include <stdio.h>
 #include <time.h>
@@ -29,8 +30,6 @@ static Apu apu[POLYPHONY];
 static Mpu mpu;
 static Device *devscreen, *devmouse, *devctrl, *devmidi, *devaudio0;
 
-static FILE *errLog;
-
 #define PAD 16
 
 Uint8 zoom = 0, debug = 0, reqdraw = 0, bench = 0;
@@ -44,9 +43,7 @@ clamp(int val, int min, int max)
 int
 error(char *msg, const char *err)
 {
-	// printf("Error %s: %s\n", msg, err);
-	fprintf(errLog, "Error %s: %s\n", msg, err);
-	fflush(errLog);
+	printf("Error %s: %s\n", msg, err);
 	return 0;
 }
 
@@ -105,7 +102,7 @@ quit(void)
 	SDL_DestroyWindow(gWindow);
 	gWindow = NULL;
 	SDL_Quit();
-	exit(0);
+	sceKernelExitProcess(0);
 }
 
 int
@@ -175,6 +172,29 @@ domouse(SDL_Event *event)
 			devmouse->dat[7] = 0x10;
 		break;
 	case SDL_MOUSEBUTTONUP:
+		devmouse->dat[6] &= (~flag);
+		break;
+	}
+}
+
+void
+dotouch(SDL_Event *event)
+{
+	Uint8 flag = 0x00;
+	Uint16 x = clamp(event->tfinger.x - PAD, 0, ppu.hor * 8 - 1);
+	Uint16 y = clamp(event->tfinger.y - PAD, 0, ppu.ver * 8 - 1);
+	mempoke16(devmouse->dat, 0x2, x);
+	mempoke16(devmouse->dat, 0x4, y);
+	devmouse->dat[7] = 0x00;
+	switch(event->type) {
+	case SDL_FINGERDOWN:
+		devmouse->dat[6] |= flag;
+		if(flag == 0x10 && (devmouse->dat[6] & 0x01))
+			devmouse->dat[7] = 0x01;
+		if(flag == 0x01 && (devmouse->dat[6] & 0x10))
+			devmouse->dat[7] = 0x10;
+		break;
+	case SDL_FINGERUP:
 		devmouse->dat[6] &= (~flag);
 		break;
 	}
@@ -366,6 +386,12 @@ start(Uxn *u)
 				domouse(&event);
 				evaluxn(u, mempeek16(devmouse->dat, 0));
 				break;
+			case SDL_FINGERUP:
+			case SDL_FINGERDOWN:
+			case SDL_FINGERMOTION:
+				dotouch(&event);
+				evaluxn(u, mempeek16(devmouse->dat, 0));
+				break;
 			case SDL_WINDOWEVENT:
 				if(event.window.event == SDL_WINDOWEVENT_EXPOSED)
 					redraw(u);
@@ -393,17 +419,12 @@ start(Uxn *u)
 int
 main(int argc, char **argv)
 {
-	errLog = fopen("ux0:data/uxnlog.txt", "r");
-
 	Uxn u;
 	zoom = 2;
 
-	// if(argc < 2)
-	// 	return error("Input", "Missing");
 	if(!bootuxn(&u))
 		return error("Boot", "Failed");
-	//if(!loaduxn(&u, argv[1]))
-	if(!loaduxn(&u, "ux0:data/boot.rom"))
+	if(!loaduxn(&u, "ux0:data/uxnemu/boot.rom"))
 		return error("Load", "Failed");
 	if(!init())
 		return error("Init", "Failed");
