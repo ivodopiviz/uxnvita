@@ -134,7 +134,6 @@ init(void)
 		return error("Texture", SDL_GetError());
 	SDL_UpdateTexture(bgTexture, NULL, ppu.bg.pixels, 4);
 	SDL_UpdateTexture(fgTexture, NULL, ppu.fg.pixels, 4);
-	SDL_StartTextInput();
 	SDL_ShowCursor(SDL_DISABLE);
 	SDL_zero(as);
 	as.freq = SAMPLE_FREQUENCY;
@@ -172,29 +171,6 @@ domouse(SDL_Event *event)
 			devmouse->dat[7] = 0x10;
 		break;
 	case SDL_MOUSEBUTTONUP:
-		devmouse->dat[6] &= (~flag);
-		break;
-	}
-}
-
-void
-dotouch(SDL_Event *event)
-{
-	Uint8 flag = 0x00;
-	Uint16 x = clamp(event->tfinger.x - PAD, 0, ppu.hor * 8 - 1);
-	Uint16 y = clamp(event->tfinger.y - PAD, 0, ppu.ver * 8 - 1);
-	mempoke16(devmouse->dat, 0x2, x);
-	mempoke16(devmouse->dat, 0x4, y);
-	devmouse->dat[7] = 0x00;
-	switch(event->type) {
-	case SDL_FINGERDOWN:
-		devmouse->dat[6] |= flag;
-		if(flag == 0x10 && (devmouse->dat[6] & 0x01))
-			devmouse->dat[7] = 0x01;
-		if(flag == 0x01 && (devmouse->dat[6] & 0x10))
-			devmouse->dat[7] = 0x10;
-		break;
-	case SDL_FINGERUP:
 		devmouse->dat[6] &= (~flag);
 		break;
 	}
@@ -384,12 +360,6 @@ start(Uxn *u)
 			case SDL_MOUSEBUTTONDOWN:
 			case SDL_MOUSEMOTION:
 				domouse(&event);
-				evaluxn(u, mempeek16(devmouse->dat, 0));
-				break;
-			case SDL_FINGERUP:
-			case SDL_FINGERDOWN:
-			case SDL_FINGERMOTION:
-				dotouch(&event);
 				evaluxn(u, mempeek16(devmouse->dat, 0));
 				break;
 			case SDL_WINDOWEVENT:
