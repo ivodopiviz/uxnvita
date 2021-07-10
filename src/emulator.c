@@ -25,10 +25,12 @@ static SDL_Window *gWindow;
 static SDL_Renderer *gRenderer;
 static SDL_Texture *fgTexture, *bgTexture;
 static SDL_Rect gRect;
+static SDL_GameController *gController;
 static Ppu ppu;
 static Apu apu[POLYPHONY];
 static Mpu mpu;
 static Device *devscreen, *devmouse, *devctrl, *devmidi, *devaudio0;
+static char rompath[256];
 
 #define PAD 16
 
@@ -101,6 +103,8 @@ quit(void)
 	gRenderer = NULL;
 	SDL_DestroyWindow(gWindow);
 	gWindow = NULL;
+	SDL_GameControllerClose(gController);
+	gController = NULL;
 	SDL_Quit();
 	sceKernelExitProcess(0);
 }
@@ -117,7 +121,7 @@ init(void)
 	gRect.h = ppu.height;
 	if(!initmpu(&mpu, 1))
 		return error("MPU", "Init failure");
-	if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0)
+	if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) < 0)
 		return error("Init", SDL_GetError());
 	gWindow = SDL_CreateWindow("Uxn", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, (ppu.width + PAD * 2) * zoom, (ppu.height + PAD * 2) * zoom, SDL_WINDOW_SHOWN);
 	if(gWindow == NULL)
@@ -146,6 +150,7 @@ init(void)
 	if(!audio_id)
 		return error("Audio", SDL_GetError());
 	SDL_PauseAudioDevice(audio_id, 0);
+	gController = SDL_GameControllerOpen(0);
 	return 1;
 }
 
@@ -347,7 +352,14 @@ start(Uxn *u)
 			case SDL_QUIT:
 				quit();
 				break;
+			case SDL_CONTROLLERBUTTONUP:
+				if(event.cbutton.button == SDL_CONTROLLER_BUTTON_START)
+					SDL_StartTextInput();
+				break;
 			case SDL_TEXTINPUT:
+				printf("Text: %s", event.text.text);
+                SDL_StopTextInput();
+				break;
 			case SDL_KEYDOWN:
 			case SDL_KEYUP:
 				if(event.text.text[0] >= ' ' && event.text.text[0] <= '~')
@@ -392,9 +404,11 @@ main(int argc, char **argv)
 	Uxn u;
 	zoom = 2;
 
+	sprintf(&rompath, "ux0:data/uxn/%s", "boot.rom");
+
 	if(!bootuxn(&u))
 		return error("Boot", "Failed");
-	if(!loaduxn(&u, "ux0:data/uxn/boot.rom"))
+	if(!loaduxn(&u, rompath))
 		return error("Load", "Failed");
 	if(!init())
 		return error("Init", "Failed");
