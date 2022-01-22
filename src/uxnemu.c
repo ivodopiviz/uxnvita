@@ -257,6 +257,9 @@ load(Uxn *u, char *rom)
 static int
 start(Uxn *u, char *rom)
 {
+    char rom_path[256] = "ux0:data/uxn/";
+    strcat(rom_path, rom);
+
 	if(!uxn_boot(u, (Uint8 *)calloc(0x10000, sizeof(Uint8))))
 		return error("Boot", "Failed to start uxn.");
 	if(!load(u, rom))
