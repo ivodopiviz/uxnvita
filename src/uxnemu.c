@@ -1,6 +1,7 @@
 #include <psp2/kernel/processmgr.h>
 
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 
 #include "uxn.h"
@@ -37,6 +38,8 @@ WITH REGARD TO THIS SOFTWARE.
 #define PAD 4
 #define BENCH 0
 
+#define LAUNCHER_ROM "ux0:data/uxn/launcher.rom"
+
 static SDL_Window *gWindow;
 static SDL_Texture *gTexture;
 static SDL_Renderer *gRenderer;
@@ -52,7 +55,13 @@ static Uint32 stdin_event, audio0_event;
 static int
 error(char *msg, const char *err)
 {
-	fprintf(stderr, "%s: %s\n", msg, err);
+    char str[256];
+    sprintf(str, "%s: %s", msg, err);
+
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
+                             "Error",
+                             str,
+                             NULL);
 	return 0;
 }
 
@@ -151,7 +160,7 @@ init(void)
 	as.userdata = NULL;
 	if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK) < 0)
 		return error("sdl", SDL_GetError());
-	gWindow = SDL_CreateWindow("Uxn", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, (WIDTH + PAD * 2) * zoom, (HEIGHT + PAD * 2) * zoom, SDL_WINDOW_SHOWN);
+	gWindow = SDL_CreateWindow("Uxn", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, (WIDTH + PAD * 2) * zoom, (HEIGHT + PAD * 2) * zoom, SDL_WINDOW_SHOWN | SDL_WINDOW_FULLSCREEN);
 	if(gWindow == NULL)
 		return error("sdl_window", SDL_GetError());
 	gRenderer = SDL_CreateRenderer(gWindow, -1, 0);
@@ -166,7 +175,6 @@ init(void)
 	stdin_event = SDL_RegisterEvents(1);
 	audio0_event = SDL_RegisterEvents(POLYPHONY);
 	SDL_CreateThread(stdin_handler, "stdin", NULL);
-	SDL_StartTextInput();
 	SDL_ShowCursor(SDL_DISABLE);
 	SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
 	return 1;
@@ -257,9 +265,6 @@ load(Uxn *u, char *rom)
 static int
 start(Uxn *u, char *rom)
 {
-    char rom_path[256] = "ux0:data/uxn/";
-    strcat(rom_path, rom);
-
 	if(!uxn_boot(u, (Uint8 *)calloc(0x10000, sizeof(Uint8))))
 		return error("Boot", "Failed to start uxn.");
 	if(!load(u, rom))
@@ -313,7 +318,7 @@ static void
 restart(Uxn *u)
 {
 	screen_resize(&uxn_screen, WIDTH, HEIGHT);
-	start(u, "launcher.rom");
+	start(u, LAUNCHER_ROM);
 }
 
 static Uint8
@@ -488,7 +493,7 @@ main(int argc, char **argv)
 			console_input(&u, '\n');
 		}
 	}
-	if(!loaded && !start(&u, "launcher.rom"))
+	if(!loaded && !start(&u, LAUNCHER_ROM))
 		return error("usage", "uxnemu [-s scale] file.rom");
 	run(&u);
 	SDL_Quit();
