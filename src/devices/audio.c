@@ -1,5 +1,5 @@
 #include "../uxn.h"
-#include "apu.h"
+#include "audio.h"
 
 /*
 Copyright (c) 2021 Devine Lu Linvega
@@ -23,10 +23,12 @@ static Uint32 advances[12] = {
 	0xb504f, 0xbfc88, 0xcb2ff, 0xd7450, 0xe411f, 0xf1a1c
 };
 
+UxnAudio uxn_audio[POLYPHONY];
+
 /* clang-format on */
 
 static Sint32
-envelope(Apu *c, Uint32 age)
+envelope(UxnAudio *c, Uint32 age)
 {
 	if(!c->r) return 0x0888;
 	if(age < c->a) return 0x0888 * age / c->a;
@@ -37,11 +39,11 @@ envelope(Apu *c, Uint32 age)
 	return 0x0000;
 }
 
-void
-apu_render(Apu *c, Sint16 *sample, Sint16 *end)
+int
+audio_render(UxnAudio *c, Sint16 *sample, Sint16 *end)
 {
 	Sint32 s;
-	if(!c->advance || !c->period) return;
+	if(!c->advance || !c->period) return 0;
 	while(sample < end) {
 		c->count += c->advance;
 		c->i += c->count / c->period;
@@ -49,7 +51,7 @@ apu_render(Apu *c, Sint16 *sample, Sint16 *end)
 		if(c->i >= c->len) {
 			if(!c->repeat) {
 				c->advance = 0;
-				return;
+				break;
 			}
 			c->i %= c->len;
 		}
@@ -57,10 +59,12 @@ apu_render(Apu *c, Sint16 *sample, Sint16 *end)
 		*sample++ += s * c->volume[0] / 0x180;
 		*sample++ += s * c->volume[1] / 0x180;
 	}
+	if(!c->advance) audio_finished_handler(c);
+	return 1;
 }
 
 void
-apu_start(Apu *c, Uint16 adsr, Uint8 pitch)
+audio_start(UxnAudio *c, Uint16 adsr, Uint8 pitch)
 {
 	if(pitch < 108 && c->len)
 		c->advance = advances[pitch % 12] >> (8 - pitch / 12);
@@ -81,13 +85,14 @@ apu_start(Apu *c, Uint16 adsr, Uint8 pitch)
 }
 
 Uint8
-apu_get_vu(Apu *c)
+audio_get_vu(UxnAudio *c)
 {
-	size_t i;
-	Sint32 sum[2];
+	int i;
+	Sint32 sum[2] = {0, 0};
 	if(!c->advance || !c->period) return 0;
-	for(i = 0; i < 2; ++i) {
-		sum[i] = envelope(c, c->age) * c->volume[i] / 0x800;
+	for(i = 0; i < 2; i++) {
+		if(!c->volume[i]) continue;
+		sum[i] = 1 + envelope(c, c->age) * c->volume[i] / 0x800;
 		if(sum[i] > 0xf) sum[i] = 0xf;
 	}
 	return (sum[0] << 4) | sum[1];
