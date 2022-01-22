@@ -1,7 +1,3 @@
-#include <stdio.h>
-#include <stdlib.h>
-/* #include <portmidi.h> */
-
 /*
 Copyright (c) 2021 Devine Lu Linvega
 Copyright (c) 2021 Andrew Alderwick
@@ -14,20 +10,4 @@ THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
 WITH REGARD TO THIS SOFTWARE.
 */
 
-typedef unsigned char Uint8;
-
-typedef struct {
-	int message;
-} PmEvent;
-
-typedef struct {
-	Uint8 queue;
-	PmEvent events[32];
-	/*
-	PmStream *midi;
-	PmError error;
-	*/
-} Mpu;
-
-int initmpu(Mpu *m, Uint8 device);
-void listenmpu(Mpu *m);
+Uint8 datetime_dei(Device *d, Uint8 port);

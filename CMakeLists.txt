@@ -13,7 +13,7 @@ include("${VITASDK}/share/vita.cmake" REQUIRED)
 
 set(VITA_APP_NAME "Uxn")
 set(VITA_TITLEID  "MERV00001")
-set(VITA_VERSION  "00.01")
+set(VITA_VERSION  "00.02")
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu11")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
@@ -25,11 +25,15 @@ include_directories(
 )
 
 add_executable(${PROJECT_NAME}
-  src/emulator.c
+  src/uxnemu.c
   src/uxn.c
-  src/devices/apu.c
-  src/devices/mpu.c
-  src/devices/ppu.c
+  src/devices/audio.c
+  src/devices/controller.c
+  src/devices/datetime.c
+  src/devices/file.c
+  src/devices/mouse.c
+  src/devices/screen.c
+  src/devices/system.c
 )
 
 target_link_libraries(${PROJECT_NAME}
