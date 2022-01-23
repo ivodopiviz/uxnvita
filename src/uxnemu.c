@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "uxn.h"
 
@@ -470,13 +471,16 @@ main(int argc, char **argv)
 	Uxn u;
 	int i, loaded = 0;
 
+    // change the working directory as soon as possible
+    chdir("ux0:data/uxn/");
+
 	if(!init())
 		return error("Init", "Failed to initialize emulator.");
 	screen_resize(&uxn_screen, WIDTH, HEIGHT);
 
 	/* set default zoom */
 	if(SDL_GetCurrentDisplayMode(0, &DM) == 0)
-		set_zoom(DM.w / 1280);
+		set_zoom(DM.w / 960);
 	for(i = 1; i < argc; i++) {
 		/* get default zoom from flags */
 		if(strcmp(argv[i], "-s") == 0) {
