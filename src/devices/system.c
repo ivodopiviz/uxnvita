@@ -1,7 +1,7 @@
+#include <stdio.h>
+
 #include "../uxn.h"
 #include "system.h"
-
-#include <stdio.h>
 
 /*
 Copyright (c) 2022 Devine Lu Linvega, Andrew Alderwick
@@ -20,7 +20,8 @@ static const char *errors[] = {
 	"Working-stack overflow",
 	"Return-stack overflow",
 	"Working-stack division by zero",
-	"Return-stack division by zero"};
+	"Return-stack division by zero",
+	"Execution timeout"};
 
 static void
 system_print(Stack *s, char *name)
@@ -44,18 +45,6 @@ system_inspect(Uxn *u)
 int
 uxn_halt(Uxn *u, Uint8 error, Uint16 addr)
 {
-	Device *d = &u->dev[0];
-	Uint16 vec = GETVECTOR(d);
-	DEVPOKE16(0x4, addr);
-	d->dat[0x6] = error;
-	if(vec) {
-		/* need to rearm to run System/vector again */
-		d->dat[0] = 0;
-		d->dat[1] = 0;
-		if(error != 2) /* working stack overflow has special treatment */
-			vec += 0x0004;
-		return uxn_eval(u, vec);
-	}
 	system_inspect(u);
 	fprintf(stderr, "Halted: %s#%04x, at 0x%04x\n", errors[error], u->ram[addr], addr);
 	return 0;

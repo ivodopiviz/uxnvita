@@ -15,17 +15,8 @@ typedef signed int Sint32;
 #define SAMPLE_FREQUENCY 44100
 #define POLYPHONY 4
 
-typedef struct {
-	Uint8 *addr;
-	Uint32 count, advance, period, age, a, d, s, r;
-	Uint16 i, len;
-	Sint8 volume[2];
-	Uint8 pitch, repeat;
-} UxnAudio;
-
-extern UxnAudio uxn_audio[POLYPHONY];
-
-Uint8 audio_get_vu(UxnAudio *c);
-int audio_render(UxnAudio *c, Sint16 *sample, Sint16 *end);
-void audio_start(UxnAudio *c, Uint16 adsr, Uint8 pitch);
-void audio_finished_handler(UxnAudio *c);
+Uint8 audio_get_vu(int instance);
+Uint16 audio_get_position(int instance);
+int audio_render(int instance, Sint16 *sample, Sint16 *end);
+void audio_start(int instance, Device *d);
+void audio_finished_handler(int instance);

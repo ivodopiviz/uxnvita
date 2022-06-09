@@ -10,4 +10,9 @@ THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
 WITH REGARD TO THIS SOFTWARE.
 */
 
+#define POLYFILEY 2
+#define DEV_FILE0 0xa
+
 void file_deo(Device *d, Uint8 port);
+Uint8 file_dei(Device *d, Uint8 port);
+int load_rom(Uxn *u, char *filename);
