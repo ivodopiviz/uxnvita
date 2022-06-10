@@ -1,3 +1,6 @@
+#ifndef UXN_UXN_H
+#define UXN_UXN_H
+
 /*
 Copyright (c) 2021 Devine Lu Linvega
 
@@ -16,12 +19,6 @@ typedef signed short Sint16;
 typedef unsigned int Uint32;
 
 #define PAGE_PROGRAM 0x0100
-#define VISOR_DEV 0xfa00
-#define VISOR_WST 0xfb00
-#define VISOR_RST 0xfc00
-#define PAGE_DEV 0xfd00
-#define PAGE_WST 0xfe00
-#define PAGE_RST 0xff00
 
 /* clang-format off */
 
@@ -50,6 +47,7 @@ typedef struct Uxn {
 
 int uxn_boot(Uxn *u, Uint8 *ram);
 int uxn_eval(Uxn *u, Uint16 pc);
+int uxn_interrupt(void);
 int uxn_halt(Uxn *u, Uint8 error, Uint16 addr);
-int uxn_interrupt(Uxn *u);
 Device *uxn_port(Uxn *u, Uint8 id, Uint8 (*deifn)(Device *, Uint8), void (*deofn)(Device *, Uint8));
+#endif /* UXN_UXN_H */
