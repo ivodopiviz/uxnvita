@@ -19,6 +19,9 @@
 #include "devices/controller.h"
 #include "devices/mouse.h"
 #include "devices/datetime.h"
+#ifdef _WIN32
+#include <processthreadsapi.h>
+#endif
 #pragma GCC diagnostic pop
 #pragma clang diagnostic pop
 
@@ -37,6 +40,7 @@ WITH REGARD TO THIS SOFTWARE.
 #define WIDTH 64 * 8
 #define HEIGHT 40 * 8
 #define PAD 4
+#define TIMEOUT_MS 334
 #define BENCH 0
 #define TIMEOUT_FRAMES 20
 
@@ -53,7 +57,10 @@ static SDL_Thread *stdin_thread;
 
 static Device *devscreen, *devmouse, *devctrl, *devaudio0;
 static Uint8 zoom = 1;
-static Uint32 stdin_event, audio0_event, redraw_event, interrupt_event;
+static Uint32 stdin_event, audio0_event;
+static Uint64 exec_deadline, deadline_interval, ms_interval;
+
+char *rom_path;
 
 static int
 error(char *msg, const char *err)
@@ -96,28 +103,8 @@ stdin_handler(void *p)
 {
 	SDL_Event event;
 	event.type = stdin_event;
-	while(fread(&event.cbutton.button, 1, 1, stdin) > 0)
-		SDL_PushEvent(&event);
-	return 0;
-	(void)p;
-}
-
-static int
-redraw_handler(void *p)
-{
-	int dropped_frames = 0, stop = 0;
-	SDL_Event event, interrupt;
-	event.type = redraw_event;
-	interrupt.type = interrupt_event;
-	while(!stop) {
-		SDL_Delay(16);
-		if(SDL_HasEvent(redraw_event) == SDL_FALSE) {
-			stop = SDL_PushEvent(&event) < 0;
-			dropped_frames = 0;
-		} else if(++dropped_frames == TIMEOUT_FRAMES) {
-			stop = SDL_PushEvent(&interrupt) < 0;
-		}
-	}
+	while(read(0, &event.cbutton.button, 1) > 0 && SDL_PushEvent(&event) >= 0)
+		;
 	return 0;
 	(void)p;
 }
@@ -176,7 +163,7 @@ init(void)
 	as.userdata = NULL;
 	if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK) < 0)
 		return error("sdl", SDL_GetError());
-	gWindow = SDL_CreateWindow("Uxn", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, (WIDTH + PAD * 2) * zoom, (HEIGHT + PAD * 2) * zoom, SDL_WINDOW_SHOWN | SDL_WINDOW_FULLSCREEN);
+	gWindow = SDL_CreateWindow("Uxn", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, (WIDTH + PAD * 2) * zoom, (HEIGHT + PAD * 2) * zoom, SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI);
 	if(gWindow == NULL)
 		return error("sdl_window", SDL_GetError());
 	gRenderer = SDL_CreateRenderer(gWindow, -1, 0);
@@ -190,12 +177,12 @@ init(void)
 		error("sdl_joystick", SDL_GetError());
 	stdin_event = SDL_RegisterEvents(1);
 	audio0_event = SDL_RegisterEvents(POLYPHONY);
-	redraw_event = SDL_RegisterEvents(1);
-	interrupt_event = SDL_RegisterEvents(1);
 	SDL_DetachThread(stdin_thread = SDL_CreateThread(stdin_handler, "stdin", NULL));
-	SDL_DetachThread(SDL_CreateThread(redraw_handler, "redraw", NULL));
+	SDL_StartTextInput();
 	SDL_ShowCursor(SDL_DISABLE);
 	SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
+	ms_interval = SDL_GetPerformanceFrequency() / 1000;
+	deadline_interval = ms_interval * TIMEOUT_MS;
 	return 1;
 }
 
@@ -269,6 +256,7 @@ load(Uxn *u, char *rom)
 	f->close(f);
 	if(r < 1) return 0;
 	fprintf(stderr, "Loaded %s\n", rom);
+	fflush(stderr);
 	SDL_SetWindowTitle(gWindow, rom);
 	return 1;
 }
@@ -276,7 +264,8 @@ load(Uxn *u, char *rom)
 static int
 start(Uxn *u, char *rom)
 {
-	if(!uxn_boot(u, (Uint8 *)calloc(0x10000, sizeof(Uint8))))
+	free(u->ram);
+	if(!uxn_boot(u, calloc(0x10000, 1)))
 		return error("Boot", "Failed to start uxn.");
 	if(!load(u, rom))
 		return error("Boot", "Failed to load rom.");
@@ -296,6 +285,7 @@ start(Uxn *u, char *rom)
 	/* unused   */ uxn_port(u, 0xd, nil_dei, nil_deo);
 	/* unused   */ uxn_port(u, 0xe, nil_dei, nil_deo);
 	/* unused   */ uxn_port(u, 0xf, nil_dei, nil_deo);
+	exec_deadline = SDL_GetPerformanceCounter() + deadline_interval;
 	if(!uxn_eval(u, PAGE_PROGRAM))
 		return error("Boot", "Failed to start rom.");
 	return 1;
@@ -323,13 +313,15 @@ capture_screen(void)
 	SDL_SaveBMP(surface, fname);
 	SDL_FreeSurface(surface);
 	fprintf(stderr, "Saved %s\n", fname);
+	fflush(stderr);
 }
 
 static void
 restart(Uxn *u)
 {
 	screen_resize(&uxn_screen, WIDTH, HEIGHT);
-	start(u, LAUNCHER_ROM);
+	if(!start(u, "launcher.rom"))
+		start(u, rom_path);
 }
 
 static Uint8
@@ -386,6 +378,10 @@ do_shortcut(Uxn *u, SDL_Event *event)
 		capture_screen();
 	else if(event->key.keysym.sym == SDLK_F4)
 		restart(u);
+	else if(event->key.keysym.sym == SDLK_F5) {
+		screen_mono(&uxn_screen, uxn_screen.pixels);
+		redraw();
+	}
 }
 
 static int
@@ -397,87 +393,99 @@ console_input(Uxn *u, char c)
 }
 
 static int
+handle_events(Uxn *u)
+{
+	SDL_Event event;
+	while(SDL_PollEvent(&event)) {
+		/* Window */
+		if(event.type == SDL_QUIT)
+			return error("Run", "Quit.");
+		else if(event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_EXPOSED)
+			redraw();
+		else if(event.type == SDL_DROPFILE) {
+			screen_resize(&uxn_screen, WIDTH, HEIGHT);
+			start(u, event.drop.file);
+			SDL_free(event.drop.file);
+		}
+		/* Audio */
+		else if(event.type >= audio0_event && event.type < audio0_event + POLYPHONY) {
+			Device *d = devaudio0 + (event.type - audio0_event);
+			uxn_eval(u, GETVECTOR(d));
+		}
+		/* Mouse */
+		else if(event.type == SDL_MOUSEMOTION)
+			mouse_pos(devmouse,
+				clamp(event.motion.x - PAD, 0, uxn_screen.width - 1),
+				clamp(event.motion.y - PAD, 0, uxn_screen.height - 1));
+		else if(event.type == SDL_MOUSEBUTTONUP)
+			mouse_up(devmouse, SDL_BUTTON(event.button.button));
+		else if(event.type == SDL_MOUSEBUTTONDOWN)
+			mouse_down(devmouse, SDL_BUTTON(event.button.button));
+		else if(event.type == SDL_MOUSEWHEEL)
+			mouse_scroll(devmouse, event.wheel.x, event.wheel.y);
+		/* Controller */
+		else if(event.type == SDL_TEXTINPUT)
+			controller_key(devctrl, event.text.text[0]);
+		else if(event.type == SDL_KEYDOWN) {
+			int ksym;
+			if(get_key(&event))
+				controller_key(devctrl, get_key(&event));
+			else if(get_button(&event))
+				controller_down(devctrl, get_button(&event));
+			else
+				do_shortcut(u, &event);
+			ksym = event.key.keysym.sym;
+			if(SDL_PeepEvents(&event, 1, SDL_PEEKEVENT, SDL_KEYUP, SDL_KEYUP) == 1 && ksym == event.key.keysym.sym) {
+				return 1;
+			}
+		} else if(event.type == SDL_KEYUP)
+			controller_up(devctrl, get_button(&event));
+		else if(event.type == SDL_JOYAXISMOTION) {
+			Uint8 vec = get_vector_joystick(&event);
+			if(!vec)
+				controller_up(devctrl, (0x03 << (!event.jaxis.axis * 2)) << 4);
+			else
+				controller_down(devctrl, (0x01 << ((vec + !event.jaxis.axis * 2) - 1)) << 4);
+		} else if(event.type == SDL_JOYBUTTONDOWN)
+			controller_down(devctrl, get_button_joystick(&event));
+		else if(event.type == SDL_JOYBUTTONUP)
+			controller_up(devctrl, get_button_joystick(&event));
+		/* Console */
+		else if(event.type == stdin_event)
+			console_input(u, event.cbutton.button);
+	}
+	return 1;
+}
+
+static int
 run(Uxn *u)
 {
 	Device *devsys = &u->dev[0];
-	redraw();
-	while(!devsys->dat[0xf]) {
-		SDL_Event event;
-		double elapsed, begin;
-		if(!BENCH)
-			begin = SDL_GetPerformanceCounter();
-		while(SDL_PollEvent(&event) != 0) {
-			/* Window */
-			if(event.type == SDL_QUIT)
-				return error("Run", "Quit.");
-			else if(event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_EXPOSED)
-				redraw();
-			else if(event.type == SDL_DROPFILE) {
-				screen_resize(&uxn_screen, WIDTH, HEIGHT);
-				start(u, event.drop.file);
-				SDL_free(event.drop.file);
-			}
-			/* Audio */
-			else if(event.type >= audio0_event && event.type < audio0_event + POLYPHONY) {
-				Device *d = devaudio0 + (event.type - audio0_event);
-				uxn_eval(u, GETVECTOR(d));
-			}
-			/* Mouse */
-			else if(event.type == SDL_MOUSEMOTION)
-				mouse_pos(devmouse,
-					clamp(event.motion.x - PAD, 0, uxn_screen.width - 1),
-					clamp(event.motion.y - PAD, 0, uxn_screen.height - 1));
-			else if(event.type == SDL_MOUSEBUTTONUP)
-				mouse_up(devmouse, SDL_BUTTON(event.button.button));
-			else if(event.type == SDL_MOUSEBUTTONDOWN)
-				mouse_down(devmouse, SDL_BUTTON(event.button.button));
-			else if(event.type == SDL_MOUSEWHEEL)
-				mouse_scroll(devmouse, event.wheel.x, event.wheel.y);
-			/* Controller */
-			else if(event.type == SDL_TEXTINPUT)
-				controller_key(devctrl, event.text.text[0]);
-			else if(event.type == SDL_KEYDOWN) {
-				int ksym;
-				if(get_key(&event))
-					controller_key(devctrl, get_key(&event));
-				else if(get_button(&event))
-					controller_down(devctrl, get_button(&event));
-				else
-					do_shortcut(u, &event);
-				ksym = event.key.keysym.sym;
-				if(SDL_PeepEvents(&event, 1, SDL_PEEKEVENT, SDL_KEYUP, SDL_KEYUP) == 1 && ksym == event.key.keysym.sym)
-					break;
-			} else if(event.type == SDL_KEYUP)
-				controller_up(devctrl, get_button(&event));
-			else if(event.type == SDL_JOYAXISMOTION) {
-				Uint8 vec = get_vector_joystick(&event);
-				if(!vec)
-					controller_up(devctrl, (0x03 << (!event.jaxis.axis * 2)) << 4);
-				else
-					controller_down(devctrl, (0x01 << ((vec + !event.jaxis.axis * 2) - 1)) << 4);
-			} else if(event.type == SDL_JOYBUTTONDOWN)
-				controller_down(devctrl, get_button_joystick(&event));
-			else if(event.type == SDL_JOYBUTTONUP)
-				controller_up(devctrl, get_button_joystick(&event));
-			/* Console */
-			else if(event.type == stdin_event)
-				console_input(u, event.cbutton.button);
-		}
+	Uint64 now = SDL_GetPerformanceCounter(), frame_end, frame_interval = SDL_GetPerformanceFrequency() / 60;
+	for(;;) {
+		/* .System/halt */
+		if(devsys->dat[0xf])
+			return error("Run", "Ended.");
+		frame_end = now + frame_interval;
+		exec_deadline = now + deadline_interval;
+		if(!handle_events(u))
+			return 0;
 		uxn_eval(u, GETVECTOR(devscreen));
 		if(uxn_screen.fg.changed || uxn_screen.bg.changed)
 			redraw();
-		if(!BENCH) {
-			elapsed = (SDL_GetPerformanceCounter() - begin) / (double)SDL_GetPerformanceFrequency() * 1000.0f;
-			SDL_Delay(clamp(16.666f - elapsed, 0, 1000));
+		now = SDL_GetPerformanceCounter();
+		if(!BENCH && ((Sint64)(frame_end - now)) > 0) {
+			SDL_Delay((frame_end - now) / ms_interval);
+			now = frame_end;
 		}
 	}
-	return error("Run", "Ended.");
+	return error("SDL_WaitEvent", SDL_GetError());
 }
 
 int
 uxn_interrupt(void)
 {
-	return SDL_PeepEvents(NULL, 1, SDL_GETEVENT, interrupt_event, interrupt_event) < 1;
+	return !SDL_QuitRequested();
 }
 
 int
@@ -507,15 +515,22 @@ main(int argc, char **argv)
 		} else if(!loaded++) {
 			if(!start(&u, argv[i]))
 				return error("Boot", "Failed to boot.");
+			rom_path = argv[i];
 		} else {
 			char *p = argv[i];
 			while(*p) console_input(&u, *p++);
 			console_input(&u, '\n');
 		}
 	}
-	if(!loaded && !start(&u, LAUNCHER_ROM))
+	if(!loaded && !start(&u, "launcher.rom"))
 		return error("usage", "uxnemu [-s scale] file.rom");
 	run(&u);
+#ifdef _WIN32
+#pragma GCC diagnostic ignored "-Wint-to-pointer-cast"
+	TerminateThread((HANDLE)SDL_GetThreadID(stdin_thread), 0);
+#elif !defined(__APPLE__)
+	close(0); /* make stdin thread exit */
+#endif
 	SDL_Quit();
     sceKernelExitProcess(0);
 	return 0;

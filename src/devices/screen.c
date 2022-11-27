@@ -24,6 +24,9 @@ static Uint8 blending[5][16] = {
 	{2, 3, 1, 2, 2, 3, 1, 2, 2, 3, 1, 2, 2, 3, 1, 2},
 	{1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0}};
 
+static Uint32 palette_mono[] = {
+	0x0f000000, 0x0fffffff};
+
 static void
 screen_write(UxnScreen *p, Layer *layer, Uint16 x, Uint16 y, Uint8 color)
 {
@@ -103,8 +106,13 @@ screen_redraw(UxnScreen *p, Uint32 *pixels)
 	Uint32 i, size = p->width * p->height, palette[16];
 	for(i = 0; i < 16; i++)
 		palette[i] = p->palette[(i >> 2) ? (i >> 2) : (i & 3)];
-	for(i = 0; i < size; i++)
-		pixels[i] = palette[p->fg.pixels[i] << 2 | p->bg.pixels[i]];
+	if(p->mono) {
+		for(i = 0; i < size; i++)
+			pixels[i] = palette_mono[(p->fg.pixels[i] ? p->fg.pixels[i] : p->bg.pixels[i]) & 0x1];
+	} else {
+		for(i = 0; i < size; i++)
+			pixels[i] = palette[p->fg.pixels[i] << 2 | p->bg.pixels[i]];
+	}
 	p->fg.changed = p->bg.changed = 0;
 }
 
@@ -112,6 +120,13 @@ int
 clamp(int val, int min, int max)
 {
 	return (val >= min) ? (val <= max) ? val : max : min;
+}
+
+void
+screen_mono(UxnScreen *p, Uint32 *pixels)
+{
+	p->mono = !p->mono;
+	screen_redraw(p, pixels);
 }
 
 /* IO */
