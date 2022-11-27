@@ -42,9 +42,6 @@ WITH REGARD TO THIS SOFTWARE.
 #define PAD 4
 #define TIMEOUT_MS 334
 #define BENCH 0
-#define TIMEOUT_FRAMES 20
-
-#define LAUNCHER_ROM "ux0:data/uxn/launcher.rom"
 
 static SDL_Window *gWindow;
 static SDL_Texture *gTexture;
